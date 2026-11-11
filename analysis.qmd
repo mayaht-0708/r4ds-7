@@ -3,10 +3,90 @@ title: "Crypto Markets"
 author: "Mayah"
 execute:
   echo: false
+  message: false
 ---
 
 ```{r}
 #| message: false
+#| cache: true
 library(tidyverse)
 library(arrow)
+
+prices <- read_parquet("data/daily_prices.parquet")
+metadata <- read_parquet("data/coin_metadata.parquet")
+categories <- read_parquet("data/categories.parquet")
+
+crypto <- prices |>
+  mutate(date = as.Date(date_raw)) |>
+  left_join(metadata, by = "coin_id") |>
+  left_join(select(categories, -description), by = "category_id")
+```
+
+```{r}
+#| message: false
+library(tidyverse)
+
+crypto |>
+  filter(coin_id == "btc") |>
+  ggplot(aes(x = date, y = price_usd)) +
+  geom_line() +
+  labs(
+    title = "Bitcoin Daily Price",
+    x = "Date",
+    y = "Price (USD)"
+  )
+```
+
+```{r}
+#| message: false
+library(tidyverse)
+
+category_market_caps <- crypto |>
+  group_by(date, category_name) |>
+  summarize(category_market_cap_usd = sum(market_cap_usd, na.rm = TRUE), .groups = "drop") |>
+  mutate(category_name = fct_reorder(
+    category_name,
+    category_market_cap_usd,
+    .fun = median,
+    .desc = TRUE
+  ))
+
+events <- tibble(
+  event = c("Luna/UST crash", "FTX collapse"),
+  start = as.Date(c("2022-05-07", "2022-11-08")),
+  end = as.Date(c("2022-05-12", "2022-11-11"))
+)
+
+category_market_caps |>
+  ggplot(aes(x = date, y = category_market_cap_usd, fill = category_name)) +
+  geom_area(position = "fill") +
+  geom_rect(
+    data = events,
+    aes(xmin = start, xmax = end, ymin = 0, ymax = 1),
+    inherit.aes = FALSE,
+    fill = "grey20",
+    alpha = 0.18,
+    color = "grey20",
+    linewidth = 0.3
+  ) +
+  geom_text(
+    data = events,
+    aes(x = start + (end - start) / 2, y = 0.7, label = event),
+    inherit.aes = FALSE,
+    angle = 90,
+    color = "white",
+    fontface = "bold",
+    size = 3,
+    vjust = 1.1
+  ) +
+  scale_fill_viridis_d(option = "D") +
+  scale_y_continuous(labels = scales::label_percent()) +
+  labs(
+    title = "How Crypto Market Capitalization Is Distributed",
+    subtitle = "Daily share of total market capitalization by category; each day sums to 100%.",
+    x = "Date",
+    y = "Share of total market cap",
+    fill = "Category",
+    caption = "Source: daily_prices.parquet, coin_metadata.parquet, and categories.parquet."
+  )
 ```
